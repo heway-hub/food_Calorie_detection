@@ -66,7 +66,7 @@ class AIAnalyzer(QThread):
     "foods": [
         {
             "name": "食物名称",
-            "category": "食物类别(主食/肉类/蔬菜/调味品等)",
+            "category": "��物类别(主食/肉类/蔬菜/调味品等)",
             "weight": "估算重量(克)",
             "calories": "卡路里",
             "components": [
@@ -159,3 +159,145 @@ class AIAnalyzer(QThread):
             error_msg = f"分析过程出错: {str(e)}"
             print(f"错误详情: {error_msg}")
             self.analysis_error.emit(error_msg)
+        
+    def analyze_image_sync(self):
+        """同步分析图片"""
+        try:
+            # 编码图片
+            image_base64 = self.encode_image()
+            
+            # 调用API获取响应
+            response = self.call_api(image_base64)
+            
+            # 解析响应
+            result = self.parse_response(response)
+            
+            # 确保返回JSON字符串而不是字典
+            if isinstance(result, dict):
+                result = json.dumps(result)
+                
+            return result
+            
+        except Exception as e:
+            print(f"分析过程出错: {str(e)}")
+            raise
+
+    def call_api(self, base64_image):
+        """调用API进行图片分析"""
+        try:
+            # 初始化OpenAI客户端
+            client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
+            
+            # 准备请求数据
+            messages = [
+                {
+                    "role": "system",
+                    "content": """你是一个专业的食物营养分析师。你必须严格按照以下JSON格式输出分析结果，不要包含任何其他文本或解释。
+输出必须是可以直接被json.loads()解析的标准JSON格式：
+
+{
+    "foods": [
+        {
+            "name": "食物名称",
+            "category": "食物类别(主食/肉类/蔬菜/调味品等)",
+            "weight": "估算重量(克)",
+            "calories": "卡路里",
+            "components": [
+                {
+                    "name": "组成部分名称",
+                    "weight": "重量(克)",
+                    "category": "成分类别",
+                    "calories": "该部分卡路里"
+                }
+            ],
+            "nutrition": {
+                "protein": "蛋白质(克)",
+                "fat": "脂肪(克)",
+                "carbohydrates": "碳水化合物(克)",
+                "fiber": "膳食纤维(克)",
+                "sodium": "钠(毫克)"
+            }
+        }
+    ],
+    "total_calories": "总卡路里",
+    "meal_category": "餐点类型(早餐/午餐/晚餐/小食)",
+    "health_tips": "健康建议"
+}"""
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "分析这张食物图片，识别所有食物及其组成部分，估算重量和卡路里，分析营养成分。必须严格按照系统提示的JSON格式输出，不要包含任何其他文本。"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            print("发送API请��...")
+            response = client.chat.completions.create(
+                model="gemini-1.5-flash",
+                messages=messages,
+                max_tokens=1000,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            print(f"API调用失败: {str(e)}")
+            raise
+
+    def parse_response(self, response):
+        """解析API响应"""
+        try:
+            # 尝试从代码块中提取JSON
+            json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+            matches = re.findall(json_pattern, response)
+            
+            if matches:
+                json_str = matches[0]
+            else:
+                json_str = response
+            
+            # 解析JSON
+            json_result = json.loads(json_str)
+            
+            # 基本验证
+            if not isinstance(json_result, dict) or 'foods' not in json_result:
+                raise ValueError("返回的JSON格式不正确")
+            
+            # 确保所有数值都是数字而不是字符串
+            for food in json_result.get('foods', []):
+                food['weight'] = float(food.get('weight', 0))
+                food['calories'] = float(food.get('calories', 0))
+                
+                # 处理营养成分
+                nutrition = food.get('nutrition', {})
+                for key in nutrition:
+                    nutrition[key] = float(nutrition.get(key, 0))
+                
+                # 处理组成部分
+                for component in food.get('components', []):
+                    component['weight'] = float(component.get('weight', 0))
+                    component['calories'] = float(component.get('calories', 0))
+            
+            # 处理总卡路里
+            json_result['total_calories'] = float(json_result.get('total_calories', 0))
+            
+            return json_result
+            
+        except Exception as e:
+            print(f"响应解析失败: {str(e)}")
+            print(f"原始响应: {response}")
+            raise
