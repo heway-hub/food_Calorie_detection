@@ -1,17 +1,5 @@
-# GUI
 PyQt6>=6.4.0
-
-# 数据库
 SQLAlchemy>=2.0.0
-alembic>=1.11.0  # 用于数据库迁移
-
-# 配置和工具
-PyYAML>=6.0.0
-python-dotenv>=1.0.0
-
-# 测试
-pytest>=7.3.1
-pytest-qt>=4.2.0
-
-# 其他工具
-pillow>=10.0.0  # 图像处理 
+Pillow>=9.0.0
+pandas>=2.0.0
+matplotlib>=3.7.0
